@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AR Tap Game</title>
+    <script src="https://aframe.io/releases/1.2.0/aframe.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/gh/AR-js-org/AR.js/aframe/build/aframe-ar.js"></script>
+    <style>
+        body { margin: 0; overflow: hidden; text-align: center; }
+        #score { position: absolute; top: 10px; left: 10px; font-size: 24px; color: white; background: rgba(0,0,0,0.5); padding: 5px 10px; border-radius: 5px; z-index: 9999; }
+        #timer { position: absolute; top: 10px; right: 10px; font-size: 24px; color: white; background: rgba(0,0,0,0.5); padding: 5px 10px; border-radius: 5px; }
+        #countdown { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 48px; color: white; background: rgba(0,0,0,0.5); padding: 20px; border-radius: 10px; display: none; }
+        #startButton { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 24px; padding: 10px 20px; cursor: pointer; background: blue; color: white; border: none; border-radius: 5px; z-index: 9999;}
+        #gameOver { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 36px; color: white; background: rgba(0,0,0,0.7); padding: 20px; border-radius: 10px; display: none; text-align: center; }
+        .enemy { position: absolute; cursor: pointer; transition: transform 0.5s linear; z-index: 9999; }
+        .boss { position: absolute; cursor: pointer; transition: transform 0.5s linear; animation: pulse 1s infinite alternate; z-index: 9999; }
+        @keyframes pulse {
+            from { transform: scale(1); }
+            to { transform: scale(1.1); }
+        }
+        img {
+            -webkit-tap-highlight-color: transparent; /* タップハイライトを無効化 */
+            outline: none; /* フォーカス時のアウトラインを無効化 */
+            user-select: none; /* テキスト選択を無効化 */
+            -webkit-user-select: none; /* Safari用のテキスト選択無効化 */
+        }
+        a-scene > video {
+            pointer-events: none; /* AR映像のドラッグ操作を無効化 */
+        }
+    </style>
+</head>
+<body>
+    <div id="score">Score: 0</div>
+    <div id="timer">Time: 60</div>
+    <div id="countdown">3</div>
+    <div id="gameOver">
+        <h2>Finish!!</h2>
+        <p id="finalScore">Final Score: 0</p>
+        <button onclick="location.reload()">Play Again</button>
+        <!-- ランキング表示用 -->
+        <div id="ranking"></div>
+    </div>
+    <button id="startButton" onclick="startCountdown()">Start Game</button>
+    <a-scene embedded arjs="sourceType: webcam;" vr-mode-ui="enabled: false">
+        <a-camera position="0 1.6 0" look-controls></a-camera>
+    </a-scene>
+    <script>
+          navigator.mediaDevices.getUserMedia({ video: true })
+          .then(function(stream) {
+            // カメラが利用可能な場合の処理（AR.jsが自動的にカメラを使用）
+          })
+          .catch(function(err) {
+            // カメラが利用できない場合の処理
+            document.getElementById('fallbackBackground').style.display = 'block';
+            let arScene = document.querySelector('a-scene');
+            if (arScene) {
+              arScene.style.display = 'none';
+            }
+          });
+        
+        let score = 0;
+        let enemies = [];
+        let gameTime = 60;
+        let enemyImages = [
+            { src: "Images/1.jpeg", points: 5 },
+            { src: "Images/2.jpeg", points: 10 },
+            { src: "Images/3.jpeg", points: 15 },
+            { src: "Images/4.jpeg", points: 20 }
+        ];
+        let bossImage = "Images/boss.jpeg";
+        let bossSpawned = false;
+        let gameInterval;
+        let gameActive = false;
+        
+        function spawnEnemy() {
+            if (enemies.length >= 3) return; // すでに3体いる場合は生成しない
+            if (gameTime <= 10 && !bossSpawned) return; // ボスが出現する時間には通常の敵を生成しない
+            
+            let enemyType = enemyImages[Math.floor(Math.random() * enemyImages.length)];
+            let enemy = document.createElement("img");
+            enemy.src = enemyType.src;
+            enemy.classList.add("enemy");
+            enemy.style.width = "100px";
+            enemy.style.height = "100px";
+            enemy.style.position = "absolute";
+            enemy.style.left = Math.random() * (window.innerWidth - 100) + "px";
+            enemy.style.top = Math.random() * (window.innerHeight - 100) + "px";
+            
+            // 敵の初期位置を記録する
+            enemy.dataset.spawnX = parseFloat(enemy.style.left);
+            enemy.dataset.spawnY = parseFloat(enemy.style.top);
+            
+            let requiredTaps = Math.floor(Math.random() * 6) + 5; // 5～10回のタップが必要
+            enemy.dataset.taps = requiredTaps;
+            enemy.dataset.points = enemyType.points;
+            enemy.dataset.maxTaps = requiredTaps;
+
+            enemy.onclick = function () {
+                let tapsLeft = --this.dataset.taps;
+                this.style.opacity = tapsLeft / this.dataset.maxTaps; // タップごとに透明度を変化
+                
+                if (tapsLeft <= 0) {
+                    let pointsEarned = parseInt(this.dataset.points);
+                    score += pointsEarned;
+                    
+                    // 得点アニメーション表示
+                    let pointsPopup = document.createElement("div");
+                    pointsPopup.innerText = "+" + pointsEarned;
+                    pointsPopup.style.position = "absolute";
+                    pointsPopup.style.left = this.style.left;
+                    pointsPopup.style.top = this.style.top;
+                    pointsPopup.style.color = "red";
+                    pointsPopup.style.fontSize = "30px";
+                    pointsPopup.style.fontWeight = "bold";
+                    pointsPopup.style.zIndex = "1000";
+                    document.body.appendChild(pointsPopup);
+                    
+                    // アニメーションで上に移動して消える
+                    let startY = parseInt(this.style.top);
+                    let fadeOut = setInterval(() => {
+                        startY -= 2;
+                        pointsPopup.style.top = startY + "px";
+                        pointsPopup.style.opacity = parseFloat(pointsPopup.style.opacity || 1) - 0.05;
+                        if (parseFloat(pointsPopup.style.opacity) <= 0) {
+                            clearInterval(fadeOut);
+                            pointsPopup.remove();
+                        }
+                    }, 50);
+                    
+                    document.getElementById("score").innerText = "Score: " + score;
+                    this.remove();
+                    enemies.splice(enemies.indexOf(this), 1); // 敵リストから削除
+                    
+                    if (gameActive) {
+                        spawnEnemy(); // 新しい敵を補充
+                    }
+                }
+            };
+
+            document.body.appendChild(enemy);
+            enemies.push(enemy);
+            moveEnemy(enemy);
+        }
+        
+        function spawnBoss() {
+            if (bossSpawned) return;
+            
+            // 既存の敵をすべて削除
+            // enemies.forEach(enemy => enemy.remove());
+            // enemies = [];
+            
+            let boss = document.createElement("img");
+            boss.src = bossImage;
+            boss.classList.add("boss");
+            boss.style.width = "200px";
+            boss.style.height = "200px";
+            boss.style.position = "absolute";
+            boss.style.left = (window.innerWidth / 2 - 100) + "px";
+            boss.style.top = (window.innerHeight / 2 - 100) + "px";
+            boss.dataset.taps = 40; // ボスは40回のタップで倒せる
+            boss.dataset.maxTaps = 40;
+            boss.dataset.points = 100; // ボスの得点は100点
+            
+            boss.onclick = function () {
+                let tapsLeft = --this.dataset.taps;
+                this.style.opacity = tapsLeft / this.dataset.maxTaps; // タップごとに透明度を変化
+                
+                // タップエフェクト
+                let tapEffect = document.createElement("div");
+                tapEffect.style.position = "absolute";
+                tapEffect.style.width = "30px";
+                tapEffect.style.height = "30px";
+                tapEffect.style.borderRadius = "50%";
+                tapEffect.style.backgroundColor = "red";
+                tapEffect.style.left = (event.clientX - 15) + "px";
+                tapEffect.style.top = (event.clientY - 15) + "px";
+                document.body.appendChild(tapEffect);
+                
+                setTimeout(() => tapEffect.remove(), 300);
+                
+                if (tapsLeft <= 0) {
+                    let pointsEarned = parseInt(this.dataset.points);
+                    score += pointsEarned;
+                    
+                    // 得点アニメーション表示（大きく表示）
+                    let pointsPopup = document.createElement("div");
+                    pointsPopup.innerText = "+" + pointsEarned + " 倒した!";
+                    pointsPopup.style.position = "absolute";
+                    pointsPopup.style.left = "50%";
+                    pointsPopup.style.top = "50%";
+                    pointsPopup.style.transform = "translate(-50%, -50%)";
+                    pointsPopup.style.color = "gold";
+                    pointsPopup.style.fontSize = "36px";
+                    pointsPopup.style.fontWeight = "bold";
+                    pointsPopup.style.zIndex = "1000";
+                    document.body.appendChild(pointsPopup);
+                    
+                    setTimeout(() => pointsPopup.remove(), 2000);
+                    
+                    document.getElementById("score").innerText = "Score: " + score;
+                    this.remove();
+                    bossSpawned = false;
+                }
+            };
+            
+            document.body.appendChild(boss);
+            enemies.push(boss);
+            bossSpawned = true;
+            
+            // ボスの動きは通常の敵より遅く、少しランダム
+            setInterval(() => {
+                if (!document.body.contains(boss)) return;
+                let currentLeft = parseInt(boss.style.left);
+                let currentTop = parseInt(boss.style.top);
+                
+                boss.style.left = (currentLeft + (Math.random() * 100 - 50)) + "px";
+                boss.style.top = (currentTop + (Math.random() * 100 - 50)) + "px";
+                
+                // 画面外に出ないように調整
+                if (parseInt(boss.style.left) < 0) boss.style.left = "0px";
+                if (parseInt(boss.style.top) < 0) boss.style.top = "0px";
+                if (parseInt(boss.style.left) > window.innerWidth - 200) boss.style.left = (window.innerWidth - 200) + "px";
+                if (parseInt(boss.style.top) > window.innerHeight - 200) boss.style.top = (window.innerHeight - 200) + "px";
+            }, 2000);
+        }
+        
+        function moveEnemy(enemy) {
+            // spawn時の位置を取得
+            let spawnX = parseFloat(enemy.dataset.spawnX);
+            let spawnY = parseFloat(enemy.dataset.spawnY);
+            // オフセット範囲（各方向±5%なので、合計で約10%の範囲）
+            let offsetX = window.innerWidth * 0.05;
+            let offsetY = window.innerHeight * 0.05;
+            let moveInterval = setInterval(() => {
+                if (!document.body.contains(enemy)) {
+                    clearInterval(moveInterval);
+                    return;
+                }
+                // spawn位置を中心にランダムなオフセットを計算
+                let newX = spawnX + (Math.random() * 2 * offsetX - offsetX);
+                let newY = spawnY + (Math.random() * 2 * offsetY - offsetY);
+                enemy.style.left = newX + "px";
+                enemy.style.top = newY + "px";
+            }, 1000);
+        }
+        
+        function updateTimer() {
+            document.getElementById("timer").innerText = "Time: " + gameTime;
+        }
+        
+        function gameLoop() {
+            gameTime--;
+            updateTimer();
+            
+            // 最後の10秒でボス出現
+            if (gameTime === 10) {
+                spawnBoss();
+            }
+            
+            if (gameTime > 0) {
+                // 通常の敵の生成
+                if (gameTime > 10 || (gameTime <= 10 && !bossSpawned)) {
+                    if (enemies.length < 3) spawnEnemy();
+                }
+                
+                gameInterval = setTimeout(gameLoop, 1000);
+            } else {
+                endGame();
+            }
+        }
+        
+        function endGame() {
+            gameActive = false;
+            document.getElementById("finalScore").innerText = "Final Score: " + score;
+            document.getElementById("gameOver").style.display = "block";
+            
+            // 全ての敵を削除
+            enemies.forEach(enemy => enemy.remove());
+            enemies = [];
+             // ランキングの更新
+            updateRanking();
+        }
+        
+        function startGame() {
+            document.getElementById("countdown").style.display = "none";
+            document.getElementById("startButton").style.display = "none";
+            gameActive = true;
+            gameLoop();
+        }
+        
+        function startCountdown() {
+            document.getElementById("startButton").style.display = "none";
+            let countdownElement = document.getElementById("countdown");
+            countdownElement.style.display = "block";
+            let count = 3;
+            
+            countdownElement.innerText = count;
+            let countdownInterval = setInterval(() => {
+                count--;
+                if (count >= 0) {
+                    countdownElement.innerText = count;
+                }
+                
+                if (count < 0) {
+                    clearInterval(countdownInterval);
+                    startGame();
+                }
+            }, 1000);
+        }
+        
+        function updateRanking() {
+            let ranking = JSON.parse(localStorage.getItem("ranking")) || [];
+            ranking.push(score);
+            ranking.sort((a, b) => b - a);
+            ranking = ranking.slice(0, 3);
+            localStorage.setItem("ranking", JSON.stringify(ranking));
+            
+            let labels = ["1位", "2位", "3位"];
+            let rankingHTML = "<h3>Top 3 Ranking:</h3><ol>";
+            ranking.forEach((s, index) => {
+                    rankingHTML += `<li style="font-size: calc(16px + 1vw);">${labels[index]}: ${s}点</li>`;
+                });
+            rankingHTML += "</ol>";
+            
+            document.getElementById("ranking").innerHTML = rankingHTML;
+        }
+
+    </script>
+</body>
+</html>
