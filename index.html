@@ -37,7 +37,7 @@
     <div id="gameOver">
         <h2>Finish!!</h2>
         <p id="finalScore">Final Score: 0</p>
-        <button onclick="location.reload()">Play Again</button>
+        <button id="playAgainButton">Play Again</button>
         <!-- ランキング表示用 -->
         <div id="ranking"></div>
     </div>
@@ -81,8 +81,8 @@
             let enemy = document.createElement("img");
             enemy.src = enemyType.src;
             enemy.classList.add("enemy");
-            enemy.style.width = "100px";
-            enemy.style.height = "100px";
+            enemy.style.width = "150px";
+            enemy.style.height = "150px";
             enemy.style.position = "absolute";
             enemy.style.left = Math.random() * (window.innerWidth - 100) + "px";
             enemy.style.top = Math.random() * (window.innerHeight - 100) + "px";
@@ -153,14 +153,14 @@
             let boss = document.createElement("img");
             boss.src = bossImage;
             boss.classList.add("boss");
-            boss.style.width = "200px";
-            boss.style.height = "200px";
+            boss.style.width = "300px";
+            boss.style.height = "300px";
             boss.style.position = "absolute";
             boss.style.left = (window.innerWidth / 2 - 100) + "px";
             boss.style.top = (window.innerHeight / 2 - 100) + "px";
             boss.dataset.taps = 40; // ボスは40回のタップで倒せる
             boss.dataset.maxTaps = 40;
-            boss.dataset.points = 100; // ボスの得点は100点
+            boss.dataset.points = 150; // ボスの得点は150点
             
             boss.onclick = function () {
                 let tapsLeft = --this.dataset.taps;
@@ -274,6 +274,10 @@
             gameActive = false;
             document.getElementById("finalScore").innerText = "Final Score: " + score;
             document.getElementById("gameOver").style.display = "block";
+            document.getElementById("playAgainButton").style.display = "block";
+            document.getElementById("playAgainButton").addEventListener("click", function() {
+                location.reload();
+            });
             
             // 全ての敵を削除
             enemies.forEach(enemy => enemy.remove());
